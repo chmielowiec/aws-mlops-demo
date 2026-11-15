@@ -8,7 +8,7 @@ terraform {
 
 provider "aws" { region = var.region }
 
-variable "region" { default = "eu-central-1" }
+variable "region" { default = "eu-north-1" }
 variable "budget_email" { type = string }
 variable "model_data_url" {
   type        = string

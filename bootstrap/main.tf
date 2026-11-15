@@ -6,7 +6,7 @@ terraform {
   }
 }
 
-provider "aws" { region = "eu-central-1" }
+provider "aws" { region = "eu-north-1" }
 
 variable "repo" { default = "chmielowiec/aws-mlops-demo" }
 

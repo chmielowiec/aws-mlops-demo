@@ -4,7 +4,7 @@
 Public repo demonstrating (exposure, not production experience): Terraform on AWS, MLflow as model registry, GitHub Actions → SageMaker, CloudWatch alarm, rollback.
 
 ## Constraints
-- Private AWS account, region `eu-central-1`.
+- Private AWS account, region `eu-north-1`.
 - One test cycle (apply → deploy → destroy) costs < 1 USD.
 - No long-lived AWS keys: GitHub OIDC only.
 
