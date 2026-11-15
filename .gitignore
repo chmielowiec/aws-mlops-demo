@@ -1,0 +1,7 @@
+mlflow.db
+mlruns/
+model.tar.gz
+.terraform/
+*.tfstate*
+__pycache__/
+.venv/

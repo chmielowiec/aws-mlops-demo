@@ -1,0 +1,8 @@
+scikit-learn==1.2.1  # must match SageMaker sklearn container 1.2-1
+mlflow-skinny==2.17.2
+sqlalchemy
+alembic
+pandas<2.3
+numpy<2
+pytest
+boto3

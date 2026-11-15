@@ -1,0 +1,64 @@
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      broken:
+        description: "Deploy a deliberately broken model (rollback drill)"
+        type: boolean
+        default: false
+      destroy:
+        description: "Tear everything down instead"
+        type: boolean
+        default: false
+permissions:
+  id-token: write
+  contents: read
+concurrency: deploy
+env:
+  AWS_REGION: eu-central-1
+  TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.10" }
+      - run: pip install -r requirements.txt
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_wrapper: false }
+      - name: init
+        run: terraform -chdir=infra init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config=key=infra.tfstate -backend-config="region=$AWS_REGION"
+      - name: destroy
+        if: inputs.destroy
+        run: terraform -chdir=infra destroy -auto-approve
+      - name: base infra
+        if: ${{ !inputs.destroy }}
+        run: |
+          echo "PREV=$(terraform -chdir=infra output -raw model_data_url 2>/dev/null || true)" >> "$GITHUB_ENV"
+          terraform -chdir=infra apply -auto-approve -var "model_data_url=$(terraform -chdir=infra output -raw model_data_url 2>/dev/null || true)"
+      - name: train, register, package
+        if: ${{ !inputs.destroy }}
+        run: |
+          python train.py --out model.tar.gz ${{ inputs.broken && '--broken' || '' }}
+          URL="s3://$(terraform -chdir=infra output -raw artifacts_bucket)/models/${GITHUB_SHA}-${GITHUB_RUN_ID}/model.tar.gz"
+          aws s3 cp model.tar.gz "$URL"
+          echo "NEW=$URL" >> "$GITHUB_ENV"
+      - name: deploy new model
+        if: ${{ !inputs.destroy }}
+        id: deploy
+        continue-on-error: true
+        run: |
+          terraform -chdir=infra apply -auto-approve -var "model_data_url=$NEW"
+          ENDPOINT_NAME=$(terraform -chdir=infra output -raw endpoint_name) pytest -v tests/test_smoke.py::test_endpoint_predicts
+      - name: rollback
+        if: ${{ !inputs.destroy && steps.deploy.outcome == 'failure' }}
+        run: |
+          echo "::error::new model failed smoke test, rolling back to: ${PREV:-<none>}"
+          terraform -chdir=infra apply -auto-approve -var "model_data_url=$PREV"
+          [ -n "$PREV" ] && ENDPOINT_NAME=$(terraform -chdir=infra output -raw endpoint_name) pytest -v tests/test_smoke.py::test_endpoint_predicts
+          exit 1
