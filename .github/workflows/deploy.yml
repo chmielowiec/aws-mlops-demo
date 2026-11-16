@@ -40,14 +40,16 @@ jobs:
         if: ${{ !inputs.destroy }}
         run: |
           PREV=$(terraform -chdir=infra output -raw model_data_url 2>/dev/null || true)
-          echo "PREV=$PREV" >> "$GITHUB_ENV"
-          # self-heal: an endpoint left on a config other than Terraform's (failed update) is recreated
+          # self-heal: endpoint not InService on Terraform's config means the recorded model is not
+          # known-good (failed update was auto-reverted); drop the endpoint, deploy fresh, no rollback target
           WANT=$(terraform -chdir=infra output -raw endpoint_config_name 2>/dev/null || true)
-          LIVE=$(aws sagemaker describe-endpoint --endpoint-name aws-mlops-demo --query EndpointConfigName --output text 2>/dev/null || true)
-          if [ -n "$LIVE" ] && [ "$LIVE" != "$WANT" ]; then
-            echo "::warning::endpoint drifted ($LIVE != ${WANT:-<none>}), recreating"
+          LIVE=$(aws sagemaker describe-endpoint --endpoint-name aws-mlops-demo --query '[EndpointConfigName,EndpointStatus]' --output text 2>/dev/null || true)
+          if [ -n "$LIVE" ] && [ "$LIVE" != "$WANT	InService" ]; then
+            echo "::warning::endpoint unhealthy or drifted ($LIVE, expected ${WANT:-<none>}), removing it"
             ./scripts/delete-endpoint.sh
+            PREV=""
           fi
+          echo "PREV=$PREV" >> "$GITHUB_ENV"
           terraform -chdir=infra apply -auto-approve -var "model_data_url=$PREV"
       - name: train, register, package
         if: ${{ !inputs.destroy }}
