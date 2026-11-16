@@ -54,11 +54,19 @@ jobs:
         continue-on-error: true
         run: |
           terraform -chdir=infra apply -auto-approve -var "model_data_url=$NEW"
-          ENDPOINT_NAME=$(terraform -chdir=infra output -raw endpoint_name) pytest -v tests/test_smoke.py::test_endpoint_predicts
+          EP=$(terraform -chdir=infra output -raw endpoint_name)
+          # SageMaker reverts a failed update by itself and Terraform still reports success: compare live config
+          LIVE=$(aws sagemaker describe-endpoint --endpoint-name "$EP" --query EndpointConfigName --output text)
+          if [ "$LIVE" != "$(terraform -chdir=infra output -raw endpoint_config_name)" ]; then
+            echo "::error::endpoint update failed: $(aws sagemaker describe-endpoint --endpoint-name "$EP" --query FailureReason --output text)"
+            exit 1
+          fi
+          ENDPOINT_NAME=$EP pytest -v tests/test_smoke.py::test_endpoint_predicts
       - name: rollback
         if: ${{ !inputs.destroy && steps.deploy.outcome == 'failure' }}
         run: |
           echo "::error::new model failed smoke test, rolling back to: ${PREV:-<none>}"
-          terraform -chdir=infra apply -auto-approve -var "model_data_url=$PREV"
+          # recreate the endpoint: Terraform already deleted the config SageMaker reverted to
+          terraform -chdir=infra apply -auto-approve -replace='aws_sagemaker_endpoint.this[0]' -var "model_data_url=$PREV"
           [ -n "$PREV" ] && ENDPOINT_NAME=$(terraform -chdir=infra output -raw endpoint_name) pytest -v tests/test_smoke.py::test_endpoint_predicts
           exit 1

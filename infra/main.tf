@@ -119,3 +119,4 @@ resource "aws_budgets_budget" "monthly" {
 output "artifacts_bucket" { value = module.artifacts.s3_bucket_id }
 output "model_data_url" { value = var.model_data_url }
 output "endpoint_name" { value = local.deploy ? aws_sagemaker_endpoint.this[0].name : "" }
+output "endpoint_config_name" { value = local.deploy ? aws_sagemaker_endpoint_configuration.this[0].name : "" }
