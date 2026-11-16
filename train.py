@@ -25,9 +25,9 @@ def main(out: str, broken: bool) -> None:
     champion = mlflow.sklearn.load_model(f"models:/{NAME}@champion")
     with tempfile.TemporaryDirectory() as d:
         joblib.dump(champion, f"{d}/model.joblib")
+        if broken:  # corrupt artifact: fails whichever model_fn the container ends up using
+            Path(f"{d}/model.joblib").write_bytes(b"broken release")
         shutil.copytree(CODE, f"{d}/code")
-        if broken:  # deliberately broken release to exercise rollback
-            Path(f"{d}/code/inference.py").write_text("def model_fn(model_dir):\n    raise RuntimeError('broken release')\n")
         with tarfile.open(out, "w:gz") as t:
             for p in Path(d).iterdir():
                 t.add(p, arcname=p.name)

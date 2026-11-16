@@ -15,6 +15,16 @@ def test_package_predicts(tmp_path):
     assert model_fn(str(tmp_path / "m")).predict(SAMPLE).tolist() == [0]
 
 
+def test_broken_package_fails_to_load(tmp_path):
+    out = tmp_path / "model.tar.gz"
+    subprocess.run([sys.executable, "train.py", "--out", str(out), "--broken"], check=True)
+    tarfile.open(out).extractall(tmp_path / "m")
+    sys.path.insert(0, str(tmp_path / "m" / "code"))
+    from inference import model_fn
+    with pytest.raises(Exception):
+        model_fn(str(tmp_path / "m"))
+
+
 @pytest.mark.skipif(not os.getenv("ENDPOINT_NAME"), reason="no live endpoint")
 def test_endpoint_predicts():
     import boto3
