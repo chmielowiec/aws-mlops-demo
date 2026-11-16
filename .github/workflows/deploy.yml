@@ -42,14 +42,13 @@ jobs:
           PREV=$(terraform -chdir=infra output -raw model_data_url 2>/dev/null || true)
           echo "PREV=$PREV" >> "$GITHUB_ENV"
           # self-heal: an endpoint left on a config other than Terraform's (failed update) is recreated
-          REPLACE=""
           WANT=$(terraform -chdir=infra output -raw endpoint_config_name 2>/dev/null || true)
           LIVE=$(aws sagemaker describe-endpoint --endpoint-name aws-mlops-demo --query EndpointConfigName --output text 2>/dev/null || true)
           if [ -n "$LIVE" ] && [ "$LIVE" != "$WANT" ]; then
             echo "::warning::endpoint drifted ($LIVE != ${WANT:-<none>}), recreating"
-            REPLACE="-replace=aws_sagemaker_endpoint.this[0]"
+            ./scripts/delete-endpoint.sh
           fi
-          terraform -chdir=infra apply -auto-approve $REPLACE -var "model_data_url=$PREV"
+          terraform -chdir=infra apply -auto-approve -var "model_data_url=$PREV"
       - name: train, register, package
         if: ${{ !inputs.destroy }}
         run: |
@@ -76,6 +75,7 @@ jobs:
         run: |
           echo "::error::new model failed smoke test, rolling back to: ${PREV:-<none>}"
           # recreate the endpoint: Terraform already deleted the config SageMaker reverted to
-          terraform -chdir=infra apply -auto-approve -replace='aws_sagemaker_endpoint.this[0]' -var "model_data_url=$PREV"
+          ./scripts/delete-endpoint.sh
+          terraform -chdir=infra apply -auto-approve -var "model_data_url=$PREV"
           [ -n "$PREV" ] && ENDPOINT_NAME=$(terraform -chdir=infra output -raw endpoint_name) pytest -v tests/test_smoke.py::test_endpoint_predicts
           exit 1
